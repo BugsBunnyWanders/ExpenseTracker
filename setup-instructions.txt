@@ -1,0 +1,333 @@
+# ExpenseTracker Setup Instructions
+
+## Setup Firebase
+
+1. Create a Firebase project at https://console.firebase.google.com/
+2. Enable Authentication, Firestore, and Storage services
+3. Add a Web App to your Firebase project
+4. Copy the Firebase configuration to `services/firebase.js`
+
+## Running the App
+
+1. Install dependencies
+   ```
+   npm install
+   ```
+
+2. Start the development server
+   ```
+   npm start
+   ```
+
+3. Scan the QR code with the Expo Go app on your Android or iOS device
+
+## Troubleshooting
+
+- If you encounter any issues with AsyncStorage, make sure you have the correct version installed:
+  ```
+  npm install @react-native-async-storage/async-storage@2.1.2
+  ```
+
+# ExpenseTracker Supabase Setup Instructions
+
+## Database Setup
+
+1. Log in to your Supabase account at https://app.supabase.com/
+2. Select your project (or create a new one if you haven't already)
+3. Navigate to the SQL Editor in the left sidebar
+4. Create a new query
+5. Copy the entire SQL script below and paste it into the query editor
+6. Click "Run" to execute the script
+
+```sql
+-- Function to get table names (used by the app to check table existence)
+CREATE OR REPLACE FUNCTION public.get_table_names()
+RETURNS TABLE(table_name text)
+LANGUAGE sql
+SECURITY DEFINER
+AS $$
+  SELECT tablename::text as table_name
+  FROM pg_catalog.pg_tables
+  WHERE schemaname = 'public';
+$$;
+
+-- Grant access to the get_table_names function to anon and authenticated roles
+GRANT EXECUTE ON FUNCTION public.get_table_names() TO anon, authenticated;
+
+/*
+ * Profiles table - stores user profile information
+ */
+CREATE TABLE IF NOT EXISTS public.profiles (
+  id UUID PRIMARY KEY REFERENCES auth.users ON DELETE CASCADE,
+  name TEXT NOT NULL,
+  email TEXT NOT NULL,
+  profile_picture TEXT,
+  created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+  updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+);
+
+-- Add RLS policies for profiles
+ALTER TABLE public.profiles ENABLE ROW LEVEL SECURITY;
+
+-- Anyone can view profiles
+CREATE POLICY "Profiles are viewable by everyone" 
+ON public.profiles FOR SELECT USING (true);
+
+-- Only authenticated users can insert their own profile
+CREATE POLICY "Users can insert their own profile" 
+ON public.profiles FOR INSERT WITH CHECK (auth.uid() = id);
+
+-- Users can update only their own profile
+CREATE POLICY "Users can update their own profile" 
+ON public.profiles FOR UPDATE USING (auth.uid() = id);
+
+/*
+ * Groups table - stores group information
+ */
+CREATE TABLE IF NOT EXISTS public.groups (
+  id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  name TEXT NOT NULL,
+  description TEXT,
+  members UUID[] NOT NULL,
+  created_by UUID NOT NULL REFERENCES auth.users,
+  created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+  updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+);
+
+-- Add RLS policies for groups
+ALTER TABLE public.groups ENABLE ROW LEVEL SECURITY;
+
+-- Users can view groups they are members of
+CREATE POLICY "Users can view their groups" 
+ON public.groups FOR SELECT USING (auth.uid() = ANY(members));
+
+-- Authenticated users can create groups
+CREATE POLICY "Authenticated users can create groups" 
+ON public.groups FOR INSERT WITH CHECK (auth.uid() = created_by);
+
+-- Users can update groups they created
+CREATE POLICY "Users can update groups they created" 
+ON public.groups FOR UPDATE USING (auth.uid() = created_by);
+
+-- Only the creator can delete a group
+CREATE POLICY "Only creators can delete groups" 
+ON public.groups FOR DELETE USING (auth.uid() = created_by);
+
+/*
+ * Expenses table - stores expense information
+ */
+CREATE TABLE IF NOT EXISTS public.expenses (
+  id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  title TEXT NOT NULL,
+  amount DECIMAL NOT NULL,
+  paid_by UUID NOT NULL REFERENCES auth.users,
+  category JSONB,
+  date TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+  is_personal BOOLEAN DEFAULT false,
+  group_id UUID REFERENCES public.groups,
+  split_type TEXT DEFAULT 'equal',
+  splits JSONB,
+  notes TEXT,
+  attachments TEXT[],
+  is_settled BOOLEAN DEFAULT false,
+  created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+  updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+);
+
+-- Add RLS policies for expenses
+ALTER TABLE public.expenses ENABLE ROW LEVEL SECURITY;
+
+-- Users can view their personal expenses
+CREATE POLICY "Users can view their personal expenses" 
+ON public.expenses FOR SELECT USING (
+  auth.uid() = paid_by AND is_personal = true
+);
+
+-- Users can view expenses for groups they are members of
+CREATE POLICY "Users can view their group expenses" 
+ON public.expenses FOR SELECT USING (
+  is_personal = false AND 
+  EXISTS (
+    SELECT 1 FROM public.groups 
+    WHERE groups.id = expenses.group_id 
+    AND auth.uid() = ANY(members)
+  )
+);
+
+-- Authenticated users can create expenses
+CREATE POLICY "Authenticated users can create expenses" 
+ON public.expenses FOR INSERT WITH CHECK (auth.uid() = paid_by);
+
+-- Users can update their own expenses
+CREATE POLICY "Users can update their own expenses" 
+ON public.expenses FOR UPDATE USING (auth.uid() = paid_by);
+
+-- Users can delete their own expenses
+CREATE POLICY "Users can delete their own expenses" 
+ON public.expenses FOR DELETE USING (auth.uid() = paid_by);
+
+/*
+ * Settlements table - stores settlement information
+ */
+CREATE TABLE IF NOT EXISTS public.settlements (
+  id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  from_user UUID NOT NULL REFERENCES auth.users,
+  to_user UUID NOT NULL REFERENCES auth.users,
+  amount DECIMAL NOT NULL,
+  group_id UUID REFERENCES public.groups,
+  related_expenses UUID[],
+  method TEXT,
+  notes TEXT,
+  date TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+  created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+  updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+);
+
+-- Add RLS policies for settlements
+ALTER TABLE public.settlements ENABLE ROW LEVEL SECURITY;
+
+-- Users can view settlements they are involved in
+CREATE POLICY "Users can view their settlements" 
+ON public.settlements FOR SELECT USING (
+  auth.uid() = from_user OR auth.uid() = to_user
+);
+
+-- Authenticated users can create settlements
+CREATE POLICY "Authenticated users can create settlements" 
+ON public.settlements FOR INSERT WITH CHECK (
+  auth.uid() = from_user
+);
+
+-- Users can update settlements they created
+CREATE POLICY "Users can update their settlements" 
+ON public.settlements FOR UPDATE USING (
+  auth.uid() = from_user
+);
+
+-- Users can delete settlements they created
+CREATE POLICY "Users can delete their settlements" 
+ON public.settlements FOR DELETE USING (
+  auth.uid() = from_user
+);
+
+-- Create a function to handle profile creation on user signup
+CREATE OR REPLACE FUNCTION public.handle_new_user() 
+RETURNS trigger AS $$
+BEGIN
+  INSERT INTO public.profiles (id, name, email, created_at, updated_at)
+  VALUES (
+    NEW.id, 
+    COALESCE(NEW.raw_user_meta_data->>'name', NEW.email),
+    NEW.email,
+    NOW(),
+    NOW()
+  );
+  RETURN NEW;
+END;
+$$ LANGUAGE plpgsql SECURITY DEFINER;
+
+-- Create a trigger to automatically create a profile when a user signs up
+DROP TRIGGER IF EXISTS on_auth_user_created ON auth.users;
+CREATE TRIGGER on_auth_user_created
+  AFTER INSERT ON auth.users
+  FOR EACH ROW EXECUTE FUNCTION public.handle_new_user();
+```
+
+7. After running the script, verify the setup by returning to your terminal and running:
+   ```
+   node scripts/check-database.js
+   ```
+
+8. You should see confirmation that all tables, functions, and policies have been created successfully.
+
+## Verifying Email Settings
+
+1. In your Supabase dashboard, go to "Authentication" -> "Providers"
+2. Make sure "Email" is enabled
+3. Check that the Site URL is correctly set to your application URL
+4. Go to "Email Templates" and ensure email templates for confirmation, magic link, and reset password are set up
+
+## Testing the Setup
+
+1. Restart your application:
+   ```
+   npm start
+   ```
+
+2. Create a new user account through your application
+3. Check if profile creation succeeds (no empty error objects in console)
+4. Try creating a group and adding expenses to verify CRUD operations are working
+
+## Troubleshooting
+
+### Empty Error Objects in Console
+
+If you see empty error objects (`{}`) in the console:
+
+1. Verify that your Supabase URL and anon key in `services/supabase.js` are correct
+2. Run the database verification script again to ensure all tables and policies exist
+3. Check the Supabase dashboard for any error logs
+4. Ensure the authenticated role has permissions to access the tables
+
+### "Profiles Table Not Found" Error
+
+If you're seeing "Profiles table not found in database" errors even though the table exists:
+
+1. Clear the local cache by running:
+   ```
+   npm run clear-cache
+   ```
+
+2. Restart the development server:
+   ```
+   npm start
+   ```
+
+3. If the error persists, check your database permissions:
+   - In Supabase Dashboard, go to "Authentication" -> "Policies"
+   - Ensure the "profiles" table has the correct RLS policies
+   - Make sure the "anon" and "authenticated" roles have proper access
+
+4. Try manually creating a profile using the fix-profiles script:
+   ```
+   npm run fix-profiles
+   ```
+
+### App Shows Database Setup Required Warning
+
+If you see the "Database Setup Required" warning even after setting up tables:
+
+1. Clear your app cache:
+   ```
+   npm run clear-cache
+   ```
+
+2. Check if the `get_table_names` function exists and returns data:
+   ```
+   node scripts/test-table-function.js
+   ```
+
+3. Verify RLS policies allow the authenticated user to access the tables
+4. Check the network tab in your browser's developer tools for any API errors
+
+## Troubleshooting Database Access Issues
+
+If you're seeing errors like "Table does not exist or is not accessible" despite the database verification script confirming the tables exist, you likely have a Row Level Security (RLS) issue.
+
+To fix this:
+
+1. Run the RLS setup script:
+   ```
+   npm run fix-db-access
+   ```
+
+2. If that doesn't work, manually apply the RLS policies:
+   - Log in to your Supabase dashboard
+   - Go to the SQL Editor
+   - Create a new query
+   - Copy and paste the contents of scripts/setup-rls-policies.sql
+   - Run the query
+
+3. After applying the fix, restart your app and try again.
+
+For more detailed information, see the docs/fix-database-access.md file. 
