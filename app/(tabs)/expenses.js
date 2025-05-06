@@ -16,6 +16,7 @@ import {
 import { EXPENSE_CATEGORIES } from '../../constants/categories';
 import { createExpense, getUserExpenses } from '../../services/expenseService';
 import { getUserGroups } from '../../services/groupService';
+import { getUsersByIds } from '../../services/userService';
 import { useAuth } from '../../utils/AuthContext';
 import { formatCurrency, formatDate } from '../../utils/formatters';
 import { getUserId } from '../../utils/UserAdapter';
@@ -32,6 +33,11 @@ export default function ExpensesScreen() {
   const [selectedGroup, setSelectedGroup] = useState(null);
   const [isLoading, setIsLoading] = useState(false);
   const [isRefreshing, setIsRefreshing] = useState(false);
+  // New state variables for payer and splits
+  const [selectedPayer, setSelectedPayer] = useState(null);
+  const [splitType, setSplitType] = useState('equal');
+  const [customSplits, setCustomSplits] = useState({});
+  const [groupMembers, setGroupMembers] = useState([]);
 
   // Load user's expenses and groups on component mount
   useEffect(() => {
@@ -40,6 +46,19 @@ export default function ExpensesScreen() {
       loadGroups();
     }
   }, [currentUser]);
+
+  // Reset splits when group selection changes
+  useEffect(() => {
+    if (selectedGroup) {
+      loadGroupMembers();
+    } else {
+      setGroupMembers([]);
+      setCustomSplits({});
+    }
+    
+    // Reset selected payer when group changes
+    setSelectedPayer(null);
+  }, [selectedGroup]);
 
   const loadExpenses = async () => {
     try {
@@ -83,9 +102,58 @@ export default function ExpensesScreen() {
     }
   };
 
+  const loadGroupMembers = async () => {
+    if (!selectedGroup || !selectedGroup.members) return;
+    
+    try {
+      const members = await getUsersByIds(selectedGroup.members);
+      
+      // Convert to array format for easier rendering
+      const membersArray = Object.values(members).map(member => ({
+        id: member.id,
+        name: member.name,
+      }));
+      
+      setGroupMembers(membersArray);
+      
+      // Initialize custom splits with equal distribution
+      const equalPercentage = 100 / membersArray.length;
+      const splits = {};
+      membersArray.forEach(member => {
+        splits[member.id] = equalPercentage;
+      });
+      setCustomSplits(splits);
+      
+      // Set current user as default payer
+      const userId = getUserId(currentUser);
+      const currentUserInGroup = membersArray.find(member => member.id === userId);
+      if (currentUserInGroup) {
+        setSelectedPayer(currentUserInGroup);
+      } else if (membersArray.length > 0) {
+        setSelectedPayer(membersArray[0]);
+      }
+    } catch (error) {
+      console.error('Error loading group members:', error);
+    }
+  };
+
   const handleRefresh = () => {
     setIsRefreshing(true);
     loadExpenses();
+  };
+
+  const updateCustomSplit = (memberId, value) => {
+    const numValue = value === '' ? 0 : parseFloat(value);
+    
+    // Update the split for this member
+    setCustomSplits(prev => ({
+      ...prev,
+      [memberId]: numValue
+    }));
+  };
+
+  const getTotalSplitPercentage = () => {
+    return Object.values(customSplits).reduce((sum, value) => sum + (value || 0), 0);
   };
 
   const handleAddExpense = async () => {
@@ -104,9 +172,25 @@ export default function ExpensesScreen() {
       return;
     }
 
-    if (!isPersonalExpense && !selectedGroup) {
-      Alert.alert('Error', 'Please select a group for this expense');
-      return;
+    if (!isPersonalExpense) {
+      if (!selectedGroup) {
+        Alert.alert('Error', 'Please select a group for this expense');
+        return;
+      }
+      
+      if (!selectedPayer) {
+        Alert.alert('Error', 'Please select who paid for this expense');
+        return;
+      }
+      
+      // Validate custom splits if applicable
+      if (splitType === 'custom') {
+        const totalPercentage = getTotalSplitPercentage();
+        if (Math.abs(totalPercentage - 100) > 0.1) {
+          Alert.alert('Error', `Split percentages must add up to 100%. Current total: ${totalPercentage.toFixed(1)}%`);
+          return;
+        }
+      }
     }
 
     try {
@@ -124,10 +208,11 @@ export default function ExpensesScreen() {
         amount: parseFloat(expenseAmount),
         category: selectedCategory,
         isPersonal: isPersonalExpense,
-        paidBy: userId,
+        paidBy: isPersonalExpense ? userId : selectedPayer.id,
         date: new Date(),
-        splitType: 'equal', // Default split type
-        groupId: isPersonalExpense ? null : selectedGroup.id
+        splitType: isPersonalExpense ? 'equal' : splitType,
+        groupId: isPersonalExpense ? null : selectedGroup.id,
+        splits: splitType === 'custom' ? customSplits : null
       };
       
       // Create expense in database
@@ -139,6 +224,9 @@ export default function ExpensesScreen() {
       setSelectedCategory(null);
       setIsPersonalExpense(true);
       setSelectedGroup(null);
+      setSelectedPayer(null);
+      setSplitType('equal');
+      setCustomSplits({});
       setModalVisible(false);
       
       // Reload expenses to show the new one
@@ -192,6 +280,26 @@ export default function ExpensesScreen() {
         ]}
       >
         {group.name}
+      </Text>
+    </TouchableOpacity>
+  );
+
+  const renderMemberItem = (member) => (
+    <TouchableOpacity 
+      key={member.id}
+      style={[
+        styles.memberItem,
+        selectedPayer?.id === member.id && styles.selectedMemberItem
+      ]}
+      onPress={() => setSelectedPayer(member)}
+    >
+      <Text 
+        style={[
+          styles.memberText,
+          selectedPayer?.id === member.id && styles.selectedMemberText
+        ]}
+      >
+        {member.name}
       </Text>
     </TouchableOpacity>
   );
@@ -342,18 +450,103 @@ export default function ExpensesScreen() {
               </View>
               
               {!isPersonalExpense && (
-                <View style={styles.inputContainer}>
-                  <Text style={styles.label}>Select Group</Text>
-                  {groups.length === 0 ? (
-                    <Text style={styles.noGroupsText}>
-                      You don't have any groups. Create a group first.
-                    </Text>
-                  ) : (
-                    <View style={styles.groupsContainer}>
-                      {groups.map(renderGroupItem)}
-                    </View>
+                <>
+                  <View style={styles.inputContainer}>
+                    <Text style={styles.label}>Select Group</Text>
+                    {groups.length === 0 ? (
+                      <Text style={styles.noGroupsText}>
+                        You don't have any groups. Create a group first.
+                      </Text>
+                    ) : (
+                      <View style={styles.groupsContainer}>
+                        {groups.map(renderGroupItem)}
+                      </View>
+                    )}
+                  </View>
+
+                  {selectedGroup && (
+                    <>
+                      <View style={styles.inputContainer}>
+                        <Text style={styles.label}>Paid By</Text>
+                        <View style={styles.membersContainer}>
+                          {groupMembers.length > 0 ? (
+                            groupMembers.map(renderMemberItem)
+                          ) : (
+                            <Text style={styles.noMembersText}>
+                              Loading group members...
+                            </Text>
+                          )}
+                        </View>
+                      </View>
+
+                      <View style={styles.inputContainer}>
+                        <Text style={styles.label}>Split Type</Text>
+                        <View style={styles.splitTypeContainer}>
+                          <TouchableOpacity 
+                            style={[
+                              styles.splitTypeButton,
+                              splitType === 'equal' && styles.selectedSplitTypeButton
+                            ]}
+                            onPress={() => setSplitType('equal')}
+                          >
+                            <Text 
+                              style={[
+                                styles.splitTypeText,
+                                splitType === 'equal' && styles.selectedSplitTypeText
+                              ]}
+                            >
+                              Equal
+                            </Text>
+                          </TouchableOpacity>
+                          
+                          <TouchableOpacity 
+                            style={[
+                              styles.splitTypeButton,
+                              splitType === 'custom' && styles.selectedSplitTypeButton
+                            ]}
+                            onPress={() => setSplitType('custom')}
+                          >
+                            <Text 
+                              style={[
+                                styles.splitTypeText,
+                                splitType === 'custom' && styles.selectedSplitTypeText
+                              ]}
+                            >
+                              Custom
+                            </Text>
+                          </TouchableOpacity>
+                        </View>
+                      </View>
+
+                      {splitType === 'custom' && groupMembers.length > 0 && (
+                        <View style={styles.inputContainer}>
+                          <Text style={styles.label}>Custom Split Percentages</Text>
+                          <Text style={styles.splitHint}>
+                            Total: {getTotalSplitPercentage().toFixed(1)}% 
+                            {Math.abs(getTotalSplitPercentage() - 100) > 0.1 
+                              ? " (should be 100%)" 
+                              : ""}
+                          </Text>
+                          {groupMembers.map(member => (
+                            <View key={member.id} style={styles.splitRow}>
+                              <Text style={styles.splitName}>{member.name}</Text>
+                              <View style={styles.splitInputContainer}>
+                                <TextInput
+                                  style={styles.splitInput}
+                                  value={customSplits[member.id]?.toString() || '0'}
+                                  onChangeText={(value) => updateCustomSplit(member.id, value)}
+                                  keyboardType="decimal-pad"
+                                  placeholder="0"
+                                />
+                                <Text style={styles.percentSymbol}>%</Text>
+                              </View>
+                            </View>
+                          ))}
+                        </View>
+                      )}
+                    </>
                   )}
-                </View>
+                </>
               )}
               
               <View style={styles.modalActions}>
@@ -366,6 +559,9 @@ export default function ExpensesScreen() {
                     setSelectedCategory(null);
                     setIsPersonalExpense(true);
                     setSelectedGroup(null);
+                    setSelectedPayer(null);
+                    setSplitType('equal');
+                    setCustomSplits({});
                   }}
                 >
                   <Text style={styles.cancelButtonText}>Cancel</Text>
@@ -599,6 +795,96 @@ const styles = StyleSheet.create({
     fontStyle: 'italic',
     textAlign: 'center',
     padding: 10,
+  },
+  // New styles for payer and split UI
+  membersContainer: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    marginHorizontal: -5,
+  },
+  memberItem: {
+    backgroundColor: '#F3F4F6',
+    borderRadius: 8,
+    padding: 10,
+    marginHorizontal: 5,
+    marginBottom: 10,
+  },
+  selectedMemberItem: {
+    backgroundColor: '#5C6BC0',
+  },
+  memberText: {
+    fontSize: 14,
+    fontWeight: '500',
+    color: '#4B5563',
+  },
+  selectedMemberText: {
+    color: '#fff',
+  },
+  noMembersText: {
+    color: '#6B7280',
+    fontStyle: 'italic',
+    textAlign: 'center',
+    padding: 10,
+  },
+  splitTypeContainer: {
+    flexDirection: 'row',
+    marginBottom: 10,
+  },
+  splitTypeButton: {
+    flex: 1,
+    backgroundColor: '#F3F4F6',
+    borderRadius: 8,
+    padding: 12,
+    alignItems: 'center',
+    marginHorizontal: 5,
+  },
+  selectedSplitTypeButton: {
+    backgroundColor: '#5C6BC0',
+  },
+  splitTypeText: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: '#4B5563',
+  },
+  selectedSplitTypeText: {
+    color: '#fff',
+  },
+  splitRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: 10,
+  },
+  splitName: {
+    flex: 2,
+    fontSize: 14,
+    color: '#4B5563',
+  },
+  splitInputContainer: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    borderWidth: 1,
+    borderColor: '#D1D5DB',
+    borderRadius: 6,
+    paddingHorizontal: 8,
+  },
+  splitInput: {
+    flex: 1,
+    padding: 8,
+    fontSize: 14,
+    color: '#1F2937',
+  },
+  percentSymbol: {
+    fontSize: 14,
+    color: '#374151',
+    marginLeft: 2,
+  },
+  splitHint: {
+    fontSize: 12,
+    color: '#6B7280',
+    marginBottom: 10,
+    fontStyle: 'italic',
   },
   modalActions: {
     flexDirection: 'row',

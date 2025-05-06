@@ -1,10 +1,13 @@
 import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
-import React, { useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useState } from 'react';
 import { ActivityIndicator, FlatList, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
-import { getUserExpenses } from '../../services/expenseService';
+import { calculateGroupBalances, getUserExpenses } from '../../services/expenseService';
 import { getUserSettlements } from '../../services/settlementService';
+import { supabase } from '../../services/supabase';
 import { useAuth } from '../../utils/AuthContext';
+import { formatCurrency } from '../../utils/formatters';
+import { useRefresh } from '../../utils/RefreshContext';
 import { getUserId, getUserName } from '../../utils/UserAdapter';
 
 interface Expense {
@@ -28,6 +31,7 @@ interface Settlement {
 export default function HomeScreen() {
   const { currentUser, loading } = useAuth();
   const router = useRouter();
+  const { refreshTimestamps } = useRefresh();
   
   const [expenses, setExpenses] = useState<Expense[]>([]);
   const [settlements, setSettlements] = useState<Settlement[]>([]);
@@ -35,6 +39,25 @@ export default function HomeScreen() {
   const [totalOwe, setTotalOwe] = useState(0);
   const [isLoading, setIsLoading] = useState(false);
   const [isRefreshing, setIsRefreshing] = useState(false);
+  const [lastRefreshTime, setLastRefreshTime] = useState({
+    settlements: 0,
+    balances: 0
+  });
+
+  // Refresh data when settlements change
+  useEffect(() => {
+    if (
+      refreshTimestamps.settlements > lastRefreshTime.settlements || 
+      refreshTimestamps.balances > lastRefreshTime.balances
+    ) {
+      console.log('Home: Refresh needed due to settlement changes');
+      loadUserData();
+      setLastRefreshTime({
+        settlements: refreshTimestamps.settlements,
+        balances: refreshTimestamps.balances
+      });
+    }
+  }, [refreshTimestamps.settlements, refreshTimestamps.balances]);
 
   useEffect(() => {
     if (!loading && !currentUser) {
@@ -44,7 +67,7 @@ export default function HomeScreen() {
     }
   }, [currentUser, loading, router]);
 
-  const loadUserData = async () => {
+  const loadUserData = useCallback(async () => {
     if (!currentUser) return;
     
     try {
@@ -68,27 +91,50 @@ export default function HomeScreen() {
       const userSettlements = await getUserSettlements(userId);
       setSettlements(userSettlements);
       
-      // Calculate total balances
-      let owed = 0;
-      let owe = 0;
+      // Get user's groups to calculate total balances
+      const { data: groups, error: groupsError } = await supabase
+        .from('groups')
+        .select('id')
+        .contains('members', [userId]);
       
-      userSettlements.forEach(settlement => {
-        if (settlement.type === 'received') {
-          owed += settlement.amount;
-        } else if (settlement.type === 'paid') {
-          owe += settlement.amount;
+      if (groupsError) {
+        console.error('Error getting user groups:', groupsError);
+        throw groupsError;
+      }
+      
+      // Initialize total balances
+      let totalOwed = 0;
+      let totalOwe = 0;
+      
+      // Calculate balances from all groups
+      const groupIds = groups?.map(g => g.id) || [];
+      
+      for (const groupId of groupIds) {
+        console.log(`Calculating balances for group ${groupId}`);
+        const balances = await calculateGroupBalances(groupId);
+        const userBalance = balances[userId] || 0;
+        
+        // If balance is positive, user is owed money
+        if (userBalance > 0) {
+          totalOwed += userBalance;
+        } 
+        // If balance is negative, user owes money
+        else if (userBalance < 0) {
+          totalOwe += Math.abs(userBalance);
         }
-      });
+      }
       
-      setTotalOwed(owed);
-      setTotalOwe(owe);
+      console.log(`Total owed: ${totalOwed}, Total owe: ${totalOwe}`);
+      setTotalOwed(totalOwed);
+      setTotalOwe(totalOwe);
+      
     } catch (error) {
       console.error('Error loading user data:', error);
     } finally {
       setIsLoading(false);
       setIsRefreshing(false);
     }
-  };
+  }, [currentUser]);
 
   const handleRefresh = () => {
     setIsRefreshing(true);
@@ -96,8 +142,8 @@ export default function HomeScreen() {
   };
 
   const handleAddExpense = () => {
-    // We'll need to create this screen
-    router.navigate('/add-expense' as any);
+    // Navigate to the expenses tab where the user can add an expense
+    router.navigate('/(tabs)/expenses' as any);
   };
 
   const handleCreateGroup = () => {
@@ -130,7 +176,7 @@ export default function HomeScreen() {
           }
         </Text>
       </View>
-      <Text style={styles.activityAmount}>${parseFloat(item.amount.toString()).toFixed(2)}</Text>
+      <Text style={styles.activityAmount}>{formatCurrency(item.amount)}</Text>
     </TouchableOpacity>
   );
 
@@ -152,14 +198,14 @@ export default function HomeScreen() {
         <View style={styles.balanceCard}>
           <Text style={styles.balanceLabel}>You are owed</Text>
           <Text style={[styles.balanceAmount, styles.positiveAmount]}>
-            ${totalOwed.toFixed(2)}
+            {formatCurrency(totalOwed)}
           </Text>
         </View>
         
         <View style={styles.balanceCard}>
           <Text style={styles.balanceLabel}>You owe</Text>
           <Text style={[styles.balanceAmount, styles.negativeAmount]}>
-            ${totalOwe.toFixed(2)}
+            {formatCurrency(totalOwe)}
           </Text>
         </View>
       </View>

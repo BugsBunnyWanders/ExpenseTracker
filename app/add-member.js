@@ -11,9 +11,11 @@ import {
     TouchableOpacity,
     View,
 } from 'react-native';
+import { sendGroupInvitation } from '../services/emailService';
 import { addUserToGroup, getGroupById } from '../services/groupService';
 import { searchUsersByEmail } from '../services/userService';
 import { useAuth } from '../utils/AuthContext';
+import { getUserName } from '../utils/UserAdapter';
 
 export default function AddMemberScreen() {
   const { groupId } = useLocalSearchParams();
@@ -24,6 +26,8 @@ export default function AddMemberScreen() {
   const [searchResults, setSearchResults] = useState([]);
   const [isLoading, setIsLoading] = useState(false);
   const [groupMembers, setGroupMembers] = useState([]);
+  const [group, setGroup] = useState(null);
+  const [isEmailValid, setIsEmailValid] = useState(false);
 
   // Load current group members
   React.useEffect(() => {
@@ -35,9 +39,10 @@ export default function AddMemberScreen() {
   const loadGroupMembers = async () => {
     try {
       setIsLoading(true);
-      const group = await getGroupById(groupId);
-      if (group && group.members) {
-        setGroupMembers(group.members);
+      const groupData = await getGroupById(groupId);
+      if (groupData && groupData.members) {
+        setGroupMembers(groupData.members);
+        setGroup(groupData);
       }
     } catch (error) {
       console.error('Error loading group members:', error);
@@ -47,6 +52,11 @@ export default function AddMemberScreen() {
     }
   };
 
+  const validateEmail = (email) => {
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    return emailRegex.test(email);
+  };
+
   const handleSearch = async () => {
     if (!searchQuery.trim()) {
       return;
@@ -54,6 +64,12 @@ export default function AddMemberScreen() {
 
     try {
       setIsLoading(true);
+
+      // Check if the input is a valid email
+      const isValidEmail = validateEmail(searchQuery);
+      setIsEmailValid(isValidEmail);
+
+      // Search for existing users
       const users = await searchUsersByEmail(searchQuery);
       
       // Filter out current user and already added members
@@ -90,6 +106,51 @@ export default function AddMemberScreen() {
     } catch (error) {
       console.error('Error adding member:', error);
       Alert.alert('Error', 'Failed to add member to group.');
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const handleInviteByEmail = async () => {
+    try {
+      if (!validateEmail(searchQuery)) {
+        Alert.alert('Invalid Email', 'Please enter a valid email address.');
+        return;
+      }
+
+      if (!group) {
+        Alert.alert('Error', 'Group information not available.');
+        return;
+      }
+
+      setIsLoading(true);
+      
+      // Get current user's name for the invitation
+      const inviterName = getUserName(currentUser);
+      
+      // Send the invitation
+      const success = await sendGroupInvitation(
+        searchQuery,
+        groupId,
+        group.name,
+        inviterName
+      );
+      
+      if (success) {
+        Alert.alert(
+          'Invitation Sent',
+          `An invitation has been sent to ${searchQuery} to join "${group.name}".`
+        );
+        setSearchQuery('');
+      } else {
+        Alert.alert(
+          'Invitation Failed',
+          'Unable to send the invitation at this time. Please try again later.'
+        );
+      }
+    } catch (error) {
+      console.error('Error sending invitation:', error);
+      Alert.alert('Error', 'Failed to send invitation.');
     } finally {
       setIsLoading(false);
     }
@@ -134,7 +195,10 @@ export default function AddMemberScreen() {
         <TextInput
           style={styles.searchInput}
           value={searchQuery}
-          onChangeText={setSearchQuery}
+          onChangeText={text => {
+            setSearchQuery(text);
+            setIsEmailValid(validateEmail(text));
+          }}
           placeholder="Search by email..."
           autoCapitalize="none"
           keyboardType="email-address"
@@ -154,23 +218,50 @@ export default function AddMemberScreen() {
         </TouchableOpacity>
       </View>
       
+      {/* Show invite button when valid email is entered but no users found */}
+      {isEmailValid && searchResults.length === 0 && searchQuery && !isLoading && (
+        <View style={styles.inviteContainer}>
+          <Text style={styles.inviteText}>
+            No existing user found with this email.
+          </Text>
+          <TouchableOpacity
+            style={styles.inviteButton}
+            onPress={handleInviteByEmail}
+            disabled={isLoading}
+          >
+            {isLoading ? (
+              <ActivityIndicator size="small" color="#fff" />
+            ) : (
+              <>
+                <Ionicons name="mail" size={18} color="#fff" style={styles.inviteIcon} />
+                <Text style={styles.inviteButtonText}>
+                  Invite {searchQuery} to join
+                </Text>
+              </>
+            )}
+          </TouchableOpacity>
+        </View>
+      )}
+      
       <FlatList
         data={searchResults}
         renderItem={renderSearchResultItem}
         keyExtractor={item => item.id}
         contentContainerStyle={styles.listContainer}
         ListEmptyComponent={
-          <View style={styles.emptyState}>
-            <Text style={styles.emptyStateText}>
-              {searchQuery.trim() ? 'No users found' : 'Search for users by email'}
-            </Text>
-            <Text style={styles.emptyStateSubtext}>
-              {searchQuery.trim() 
-                ? 'Try a different email address' 
-                : 'Enter an email address to find users'
-              }
-            </Text>
-          </View>
+          !isEmailValid || isLoading ? (
+            <View style={styles.emptyState}>
+              <Text style={styles.emptyStateText}>
+                {searchQuery.trim() ? 'No users found' : 'Search for users by email'}
+              </Text>
+              <Text style={styles.emptyStateSubtext}>
+                {searchQuery.trim() 
+                  ? 'Try a different email address or invite a new user' 
+                  : 'Enter an email address to find or invite users'
+                }
+              </Text>
+            </View>
+          ) : null
         }
       />
       
@@ -210,25 +301,21 @@ const styles = StyleSheet.create({
   searchContainer: {
     flexDirection: 'row',
     paddingHorizontal: 20,
-    paddingVertical: 10,
+    paddingBottom: 20,
   },
   searchInput: {
     flex: 1,
-    height: 46,
     backgroundColor: '#fff',
+    borderRadius: 10,
+    padding: 12,
     borderWidth: 1,
-    borderColor: '#D1D5DB',
-    borderRadius: 8,
-    paddingHorizontal: 16,
-    fontSize: 16,
-    color: '#1F2937',
+    borderColor: '#E5E7EB',
     marginRight: 10,
   },
   searchButton: {
-    width: 46,
-    height: 46,
     backgroundColor: '#5C6BC0',
-    borderRadius: 8,
+    borderRadius: 10,
+    width: 46,
     justifyContent: 'center',
     alignItems: 'center',
   },
@@ -277,10 +364,10 @@ const styles = StyleSheet.create({
     color: '#6B7280',
   },
   addButton: {
-    width: 36,
-    height: 36,
-    borderRadius: 18,
     backgroundColor: '#5C6BC0',
+    width: 34,
+    height: 34,
+    borderRadius: 17,
     justifyContent: 'center',
     alignItems: 'center',
   },
@@ -288,10 +375,10 @@ const styles = StyleSheet.create({
     flex: 1,
     justifyContent: 'center',
     alignItems: 'center',
-    paddingTop: 60,
+    paddingVertical: 40,
   },
   emptyStateText: {
-    fontSize: 18,
+    fontSize: 16,
     fontWeight: '600',
     color: '#6B7280',
     marginBottom: 8,
@@ -303,20 +390,52 @@ const styles = StyleSheet.create({
     paddingHorizontal: 40,
   },
   actionButtons: {
-    padding: 16,
-    backgroundColor: '#fff',
+    padding: 20,
     borderTopWidth: 1,
-    borderTopColor: '#f0f0f0',
+    borderTopColor: '#E5E7EB',
+    backgroundColor: '#fff',
   },
   doneButton: {
     backgroundColor: '#5C6BC0',
-    borderRadius: 8,
-    padding: 14,
+    borderRadius: 10,
+    padding: 12,
     alignItems: 'center',
   },
   doneButtonText: {
     color: '#fff',
     fontWeight: '600',
     fontSize: 16,
+  },
+  inviteContainer: {
+    marginHorizontal: 20,
+    marginBottom: 10,
+    backgroundColor: '#EBF4FF',
+    padding: 16,
+    borderRadius: 10,
+    borderLeftWidth: 3,
+    borderLeftColor: '#4F46E5',
+  },
+  inviteText: {
+    fontSize: 14,
+    color: '#374151',
+    marginBottom: 12,
+  },
+  inviteButton: {
+    backgroundColor: '#4F46E5',
+    borderRadius: 8,
+    paddingVertical: 10,
+    paddingHorizontal: 16,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    alignSelf: 'flex-start',
+  },
+  inviteIcon: {
+    marginRight: 8,
+  },
+  inviteButtonText: {
+    color: '#fff',
+    fontWeight: '600',
+    fontSize: 14,
   },
 }); 

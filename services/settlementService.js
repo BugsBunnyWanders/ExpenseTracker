@@ -10,9 +10,12 @@ export const createSettlement = async (settlementData) => {
   try {
     const data = {
       ...settlementData,
+      status: settlementData.status || 'completed', // Default to completed if not specified
       created_at: new Date().toISOString(),
       updated_at: new Date().toISOString()
     };
+    
+    console.log('Creating settlement with data:', data);
     
     const { data: result, error } = await supabase
       .from('settlements')
@@ -21,6 +24,7 @@ export const createSettlement = async (settlementData) => {
       .single();
     
     if (error) throw error;
+    console.log('Settlement created successfully:', result.id);
     return result.id;
   } catch (error) {
     console.error('Error creating settlement:', error);
@@ -88,6 +92,8 @@ export const getUserSettlements = async (userId) => {
  */
 export const getGroupSettlements = async (groupId) => {
   try {
+    console.log(`Getting settlements for group: ${groupId}`);
+    
     const { data, error } = await supabase
       .from('settlements')
       .select('*')
@@ -95,7 +101,15 @@ export const getGroupSettlements = async (groupId) => {
       .order('created_at', { ascending: false });
     
     if (error) throw error;
-    return data || [];
+    
+    const settlements = data || [];
+    console.log(`Found ${settlements.length} settlements for group ${groupId}`);
+    
+    // Log completed settlements
+    const completedSettlements = settlements.filter(s => s.status === 'completed');
+    console.log(`Found ${completedSettlements.length} COMPLETED settlements for group ${groupId}`);
+    
+    return settlements;
   } catch (error) {
     console.error('Error getting group settlements:', error);
     throw error;

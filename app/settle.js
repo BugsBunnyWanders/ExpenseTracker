@@ -15,6 +15,7 @@ import { calculateSettlementPlan, createSettlement } from '../services/settlemen
 import { getUsersByIds } from '../services/userService';
 import { useAuth } from '../utils/AuthContext';
 import { formatCurrency } from '../utils/formatters';
+import { useRefresh } from '../utils/RefreshContext';
 import { getUserId } from '../utils/UserAdapter';
 
 export default function SettleScreen() {
@@ -22,6 +23,7 @@ export default function SettleScreen() {
   const { groupId } = params;
   const { currentUser } = useAuth();
   const router = useRouter();
+  const { triggerRefresh } = useRefresh();
   
   const [isLoading, setIsLoading] = useState(true);
   const [group, setGroup] = useState(null);
@@ -112,6 +114,9 @@ export default function SettleScreen() {
           created_by: userId
         });
       }
+      
+      // Trigger a refresh for settlements and balances
+      triggerRefresh(['settlements', 'balances']);
       
       Alert.alert(
         'Success',

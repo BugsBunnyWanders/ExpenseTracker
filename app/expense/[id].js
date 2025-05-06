@@ -139,6 +139,44 @@ export default function ExpenseDetailScreen() {
     return EXPENSE_CATEGORIES[EXPENSE_CATEGORIES.length - 1]; // Return "Other" as fallback
   };
   
+  const renderSplits = () => {
+    if (!expense.split_type || expense.split_type === 'equal') {
+      return (
+        <Text style={styles.splitText}>
+          Split equally among all members
+        </Text>
+      );
+    }
+
+    if (expense.split_type === 'custom' && expense.splits) {
+      let splits = expense.splits;
+      if (typeof splits === 'string') {
+        try {
+          splits = JSON.parse(splits);
+        } catch (e) {
+          console.error('Failed to parse splits:', e);
+          return <Text style={styles.splitText}>Custom split (error parsing data)</Text>;
+        }
+      }
+
+      return (
+        <View style={styles.customSplitsContainer}>
+          {Object.entries(splits).map(([memberId, percentage]) => {
+            const member = members[memberId] || { name: 'Unknown Member' };
+            return (
+              <View key={memberId} style={styles.splitRow}>
+                <Text style={styles.splitMemberName}>{member.name}</Text>
+                <Text style={styles.splitPercentage}>{parseFloat(percentage).toFixed(1)}%</Text>
+              </View>
+            );
+          })}
+        </View>
+      );
+    }
+
+    return <Text style={styles.splitText}>No split information available</Text>;
+  };
+  
   if (isLoading) {
     return (
       <View style={styles.loadingContainer}>
@@ -238,6 +276,13 @@ export default function ExpenseDetailScreen() {
               <Text style={styles.detailValue}>
                 {expense.split_type === 'equal' ? 'Equal Split' : 'Custom Split'}
               </Text>
+            </View>
+          )}
+          
+          {isGroupExpense && expense.split_type && (
+            <View style={styles.detailSection}>
+              <Text style={styles.sectionTitle}>Split Details</Text>
+              {renderSplits()}
             </View>
           )}
           
@@ -422,5 +467,47 @@ const styles = StyleSheet.create({
     fontSize: 16,
     fontWeight: '600',
     marginLeft: 8,
+  },
+  splitText: {
+    color: '#4B5563',
+    fontSize: 14,
+    marginTop: 8,
+  },
+  customSplitsContainer: {
+    marginTop: 8,
+  },
+  splitRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    paddingVertical: 8,
+    borderBottomWidth: 1,
+    borderBottomColor: '#E5E7EB',
+  },
+  splitMemberName: {
+    color: '#4B5563',
+    fontSize: 14,
+  },
+  splitPercentage: {
+    color: '#1F2937',
+    fontSize: 14,
+    fontWeight: '500',
+  },
+  sectionTitle: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: '#374151',
+    marginTop: 16,
+    marginBottom: 8,
+  },
+  detailSection: {
+    backgroundColor: '#fff',
+    borderRadius: 10,
+    padding: 16,
+    marginTop: 16,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.05,
+    shadowRadius: 2,
+    elevation: 2,
   },
 }); 

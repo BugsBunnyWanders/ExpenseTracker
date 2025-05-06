@@ -354,3 +354,42 @@ const tableExists = (tables, tableName) => {
   
   return false;
 };
+
+/**
+ * Invoke a Supabase Edge Function with proper error handling
+ * @param {string} functionName - Name of the Edge Function to invoke
+ * @param {Object} payload - Body payload to send to the function
+ * @param {Object} options - Additional options for the function call
+ * @returns {Promise<Object>} - Response from the Edge Function
+ */
+export const invokeSafeFunction = async (functionName, payload, options = {}) => {
+  try {
+    console.log(`Invoking Edge Function: ${functionName}`, payload);
+    
+    if (!functionName) {
+      throw new Error('Function name is required');
+    }
+    
+    // Ensure supabase is initialized
+    if (!supabase || !supabase.functions) {
+      console.error('Supabase client not initialized properly');
+      throw new Error('Supabase client not initialized');
+    }
+    
+    const { data, error } = await supabase.functions.invoke(functionName, {
+      body: payload,
+      ...options
+    });
+    
+    if (error) {
+      console.error(`Error invoking ${functionName}:`, error);
+      throw error;
+    }
+    
+    console.log(`Successfully invoked ${functionName}`);
+    return { data, error: null };
+  } catch (error) {
+    console.error(`Failed to invoke ${functionName}:`, error);
+    return { data: null, error };
+  }
+};

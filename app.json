@@ -16,7 +16,8 @@
         "foregroundImage": "./assets/images/adaptive-icon.png",
         "backgroundColor": "#ffffff"
       },
-      "edgeToEdgeEnabled": true
+      "edgeToEdgeEnabled": true,
+      "package": "com.bunnycodes.ExpenseTracker"
     },
     "web": {
       "bundler": "metro",
@@ -38,17 +39,13 @@
     "experiments": {
       "typedRoutes": true
     },
+    "jsEngine": "hermes",
     "extra": {
+      "router": {},
       "eas": {
-        "projectId": "your-project-id"
+        "projectId": "37c6fa97-79ea-4665-b573-dad3024f4108"
       }
     },
-    "runtimeVersion": {
-      "policy": "appVersion"
-    },
-    "updates": {
-      "url": "https://u.expo.dev/your-project-id"
-    },
-    "jsEngine": "hermes"
+    "owner": "bunnycodes"
   }
 }

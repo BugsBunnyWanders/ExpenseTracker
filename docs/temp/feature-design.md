@@ -178,4 +178,115 @@ CREATE TABLE settlements (
 2. **Offline Support**: Local caching for offline operation
 3. **Expense Categories**: Custom categories and reporting
 4. **Data Visualization**: Charts and graphs for expense analysis
-5. **Image Recognition**: Scan receipts to automatically add expenses 
+5. **Image Recognition**: Scan receipts to automatically add expenses
+
+# Feature Design: Group Invitation System
+
+## Problem Statement
+Currently, users can only add existing app users to groups. There is no way to invite friends who haven't yet joined the app, limiting the growth potential of groups and the app itself.
+
+## Solution Design
+We've implemented a comprehensive group invitation system that allows users to invite anyone via email, whether or not they already have an account in the app.
+
+### Key Components
+
+1. **Group Invitations Database Table**
+   - Stores pending invitations with email, group ID, inviter information, status, and expiration dates
+   - Tracked states: pending, accepted, declined, expired
+
+2. **Email Service**
+   - API for sending invitation emails to non-registered users
+   - Functions for checking pending invitations
+   - Methods for accepting or declining invitations
+
+3. **Invitation Context**
+   - Global state management for tracking and handling invitations
+   - Automatically checks for pending invitations on login
+   - Provides hooks for components to access invitation data
+
+4. **Integration Points**
+   - **Add Member Screen**: Enhanced to allow inviting users by email if they're not found in the system
+   - **Invitations Screen**: New dedicated screen for managing pending invitations 
+   - **Email Integration**: Uses Supabase Edge Functions to deliver invitation emails
+
+### User Flows
+
+1. **Inviting a New User**
+   - User searches for an email in the Add Member screen
+   - If the email isn't found, the system offers to send an invitation
+   - Invitation is recorded in the database and email is sent
+
+2. **Accepting an Invitation (New User)**
+   - User receives email with invitation link
+   - User signs up for account
+   - On first login, system detects pending invitations for the email
+   - User is prompted to accept or decline the invitations
+
+3. **Accepting an Invitation (Existing User)**
+   - On login, system detects pending invitations for the user's email
+   - User is notified and can view/manage invitations
+   - User can accept or decline each invitation
+
+### Technical Implementation
+
+1. **Database Schema**
+   - `group_invitations` table with proper indexing and relationships
+   - Row-Level Security policies to control access
+
+2. **API Design**
+   - `sendGroupInvitation(email, groupId, groupName, inviterName)`
+   - `getPendingInvitations(email)`
+   - `acceptInvitation(invitationId, userId)`
+   - `declineInvitation(invitationId)`
+
+3. **UI Components**
+   - Enhanced search in Add Member screen with invitation option
+   - New Invitations screen with accept/decline functionality
+   - Notification system for pending invitations
+
+### Benefits
+- Increases user acquisition through word-of-mouth invitations
+- Improves group creation experience by removing friction
+- Creates natural viral growth loops for the application
+- Enhances overall user experience by supporting real-world social connections
+
+# Feature Design: Real-time Data Refresh Implementation
+
+## Problem Statement
+When settlements are recorded in the ExpenseTracker app, the UI doesn't automatically refresh to show updated balances on the Group Details and Home screens. This creates a disconnect between the database state and what's displayed to the user, requiring manual refreshes.
+
+## Solution Design
+We've implemented a global state management solution using React Context API to automatically refresh relevant screens when data changes.
+
+### Key Components
+
+1. **RefreshContext**
+   - A centralized state management system that tracks the last refresh timestamp for different data resources
+   - Provides methods to trigger refreshes and check if data is stale
+
+2. **Integration Points**
+   - **Settle Screen**: Triggers a refresh when settlements are created
+   - **Group Details Screen**: Listens for refresh events to update balances and settlement plans
+   - **Home Screen**: Listens for refresh events to update user balances
+
+### Implementation Details
+
+#### RefreshContext
+- Maintains timestamps for different data resources (settlements, expenses, groups, balances)
+- Provides a `triggerRefresh` method to notify other components about data changes
+- Provides a mechanism to check if data is stale and needs refreshing
+
+#### Screen Updates
+- Each relevant screen checks for changes in the refresh timestamps
+- When timestamps indicate newer data is available, the screen automatically fetches fresh data
+- This approach avoids unnecessary API calls while ensuring UI remains up-to-date
+
+## Benefits
+- **Improved User Experience**: Users see up-to-date balances without requiring manual refresh
+- **Data Consistency**: UI accurately reflects the database state
+- **Maintainability**: Using a context-based approach allows for easy extension to other screens and data types
+
+## Future Enhancements
+- Consider using React Query or SWR for more advanced caching and stale data management
+- Implement optimistic UI updates for faster perceived performance
+- Add websocket support for real-time updates across multiple devices 

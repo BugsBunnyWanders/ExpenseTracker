@@ -1,6 +1,6 @@
 import { Ionicons } from '@expo/vector-icons';
 import { useLocalSearchParams, useRouter } from 'expo-router';
-import React, { useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useState } from 'react';
 import {
     ActivityIndicator,
     Alert,
@@ -15,11 +15,13 @@ import { getGroupById } from '../../services/groupService';
 import { calculateSettlementPlan } from '../../services/settlementService';
 import { getUsersByIds } from '../../services/userService';
 import { useAuth } from '../../utils/AuthContext';
+import { useRefresh } from '../../utils/RefreshContext';
 
 export default function GroupDetailsScreen() {
   const { groupId } = useLocalSearchParams();
   const { currentUser } = useAuth();
   const router = useRouter();
+  const { refreshTimestamps } = useRefresh();
   
   const [group, setGroup] = useState(null);
   const [expenses, setExpenses] = useState([]);
@@ -29,6 +31,25 @@ export default function GroupDetailsScreen() {
   const [activeTab, setActiveTab] = useState('expenses');
   const [isLoading, setIsLoading] = useState(true);
   const [isRefreshing, setIsRefreshing] = useState(false);
+  const [lastRefreshTime, setLastRefreshTime] = useState({
+    settlements: 0,
+    balances: 0
+  });
+
+  // Track if we need to refresh due to settlement changes
+  useEffect(() => {
+    if (
+      refreshTimestamps.settlements > lastRefreshTime.settlements || 
+      refreshTimestamps.balances > lastRefreshTime.balances
+    ) {
+      console.log('Refresh needed due to settlement changes');
+      loadGroupData();
+      setLastRefreshTime({
+        settlements: refreshTimestamps.settlements,
+        balances: refreshTimestamps.balances
+      });
+    }
+  }, [refreshTimestamps.settlements, refreshTimestamps.balances]);
 
   useEffect(() => {
     if (groupId && currentUser) {
@@ -36,7 +57,7 @@ export default function GroupDetailsScreen() {
     }
   }, [groupId, currentUser]);
 
-  const loadGroupData = async () => {
+  const loadGroupData = useCallback(async () => {
     try {
       setIsLoading(true);
       
@@ -71,7 +92,7 @@ export default function GroupDetailsScreen() {
       setIsLoading(false);
       setIsRefreshing(false);
     }
-  };
+  }, [groupId, router]);
 
   const handleRefresh = () => {
     setIsRefreshing(true);

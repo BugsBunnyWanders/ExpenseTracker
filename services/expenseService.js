@@ -1,4 +1,5 @@
 import { getGroupById } from './groupService';
+import { getGroupSettlements } from './settlementService';
 import { deleteData, getCurrentUser, getDataFromTable, insertData, supabase } from './supabase';
 
 /**
@@ -292,7 +293,7 @@ export const calculateGroupBalances = async (groupId) => {
       balances[memberId] = 0;
     });
     
-    // Calculate balances
+    // Calculate balances from expenses
     expenses.forEach(expense => {
       const { paid_by, amount, split_type, splits } = expense;
       let customSplit = null;
@@ -336,7 +337,28 @@ export const calculateGroupBalances = async (groupId) => {
       }
     });
     
-    console.log('Group balances calculated:', balances);
+    // Get all settlements for this group and adjust balances
+    const settlements = await getGroupSettlements(groupId);
+    
+    // Apply settlements to adjust balances
+    settlements.forEach(settlement => {
+      // Only consider completed settlements
+      if (settlement.status === 'completed') {
+        const { from_user, to_user, amount } = settlement;
+        
+        // Payer's balance decreases (they've paid their debt)
+        if (balances[from_user] !== undefined) {
+          balances[from_user] += amount;
+        }
+        
+        // Receiver's balance decreases (they've been paid)
+        if (balances[to_user] !== undefined) {
+          balances[to_user] -= amount;
+        }
+      }
+    });
+    
+    console.log('Group balances calculated (with settlements):', balances);
     return balances;
   } catch (error) {
     console.error('Error calculating balances:', error);

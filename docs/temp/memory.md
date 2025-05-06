@@ -265,3 +265,96 @@ The issue was related to Supabase's Row Level Security (RLS) policies. RLS was e
 - Debt settlement is a classic optimization problem that can be solved efficiently with greedy algorithms
 - Floating-point calculations require special handling (like using toFixed() and an epsilon value for comparisons)
 - When implementing financial features, add comprehensive logging to track the values at each step 
+
+# Project Memory: Lessons Learned
+
+## Expense and Settlement Management
+
+### Settlement Balance Calculation Bug (2024-06-06)
+**Problem:** When settling debts in the app, the settlement records were correctly saved in the database, but the balances shown in the UI weren't updating.
+
+**Root Cause:** The `calculateGroupBalances` function in `expenseService.js` was only considering expense records when calculating balances but wasn't taking settlement records into account.
+
+**Solution:**
+1. Modified `calculateGroupBalances` to also fetch and consider all completed settlements for the group
+2. Enhanced the `createSettlement` function to set a default status of 'completed' if not specified
+3. Added additional logging to help identify similar issues in the future
+
+**Lessons Learned:**
+1. When implementing financial calculations, all transactions (both expenses and settlements) must be considered
+2. A proper testing framework would have caught this issue earlier
+3. Detailed logging helps identify calculation discrepancies
+
+## Supabase Row Level Security (RLS) Issues
+
+### Permission Denied for Users Table (2024-06-07)
+**Problem:** When trying to invite users by email, we received a "permission denied for table users" error even though the RLS policy for the group_invitations table seemed correct.
+
+**Root Cause:** The RLS policy was referencing the `auth.users` table in its USING clause, which requires elevated permissions that our service role doesn't have.
+
+**Solution:**
+1. Modified the RLS policies to not reference the auth.users table directly
+2. Changed the policies to be more permissive (allowing SELECT and UPDATE operations) while moving permission checks to application code
+3. Enhanced the emailService.js code with better error handling and duplicate invitation checking
+
+**Lessons Learned:**
+1. Avoid cross-schema references in RLS policies whenever possible
+2. RLS policies can reference the current user (auth.uid()) but should avoid querying other auth tables
+3. Sometimes it's better to implement certain permission checks in application code rather than RLS policies
+4. More detailed error logging helps identify the exact source of permission issues
+5. Always test RLS policies with the actual service role that will be used in production
+
+## Email Sending Implementation
+
+### Email Service Integration (2024-06-08)
+**Problem:** The invitation system required sending emails, but React Native doesn't directly support server-side email sending libraries like nodemailer.
+
+**Root Cause:** Email sending typically requires server-side code with access to SMTP servers or mail APIs, which isn't directly available in a React Native client.
+
+**Solution:**
+1. Implemented a multi-tier email sending strategy:
+   - Primary: Direct Gmail API integration using app password credentials
+   - Secondary: EmailJS integration for a more reliable third-party service
+   - Development mode: Logging email content instead of actually sending it
+2. Enhanced error handling and added fallback mechanisms
+3. Created configuration system for email credentials in the .env file
+
+**Lessons Learned:**
+1. Mobile apps need to use third-party services or dedicated backends for sending emails
+2. Always implement a development mode that doesn't actually send emails
+3. Multiple fallback mechanisms ensure higher reliability
+4. Comprehensive logging helps debug email sending issues
+5. Clear separation of configuration from code makes deployment easier
+
+### User ID Reference Issues (2024-06-08)
+**Problem:** When accepting invitations, the app was using `currentUser.uid` instead of `currentUser.id`, causing invitation acceptances to fail.
+
+**Root Cause:** Supabase uses `id` for user IDs, but some parts of the code were still using Firebase conventions with `uid`.
+
+**Solution:**
+1. Updated the InvitationContext to use `currentUser.id` instead of `currentUser.uid`
+2. Added better error reporting when user IDs are invalid or missing
+3. Enhanced the invitation acceptance flow with more detailed logging
+
+**Lessons Learned:**
+1. When migrating between auth providers, consistently update all property references
+2. Add validation for critical IDs before using them in operations
+3. Monitor auth provider documentation for naming conventions
+
+## Database and API Access
+
+### SQL Query Execution (2024-06-08)
+**Problem:** Needed to execute SQL scripts to update RLS policies, but the custom script attempted to use a non-existent RPC function.
+
+**Root Cause:** The script assumed the existence of a `run_sql_query` function in Supabase, which doesn't exist by default.
+
+**Solution:**
+1. Created documentation on how to run the SQL scripts directly in the Supabase SQL Editor
+2. Added instructions for manually updating RLS policies
+3. Updated the database scripts to be more self-explanatory
+
+**Lessons Learned:**
+1. Don't assume the existence of custom database functions unless they're explicitly created
+2. Provide multiple ways to apply database changes (UI, API, scripts)
+3. Document all steps required for database changes
+4. Test scripts in the exact environment they'll be used in 

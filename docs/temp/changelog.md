@@ -1,5 +1,57 @@
 # Changelog
 
+## [Unreleased]
+
+### Added
+- **Group Invitation System**: Implemented a complete system for inviting non-registered users to join groups via email.
+  - Added `emailService.js` with functions for handling invitations
+  - Created SQL scripts to set up the `group_invitations` table
+  - Added `InvitationContext.js` to track and manage invitations
+  - Enhanced `add-member.js` to support inviting users by email
+  - Added a new `invitations.js` screen for managing pending invitations
+  - Updated the app layout to include the invitation system
+
+- **Real-time Data Refresh System**: Implemented a global state management solution using React Context to automatically refresh UI when settlements are recorded.
+  - Added `RefreshContext.js` to manage refresh state across the app
+  - Updated `app/_layout.tsx` to provide the refresh context to all screens
+  - Modified `app/settle.js` to trigger refresh events when settlements are created
+  - Enhanced `app/group/[id].js` to listen and respond to refresh events
+  - Enhanced `app/(tabs)/index.tsx` (Home screen) to listen and respond to refresh events
+
+- **Enhanced Email Sending System**: Implemented a robust email system for group invitations.
+  - Created a multi-tier approach with Google API and EmailJS integrations
+  - Added development mode that logs emails instead of sending them
+  - Enhanced error handling with fallback mechanisms
+  - Implemented configuration system for email credentials
+
+### Fixed
+- **Fixed permission errors in group invitations**: Modified RLS policies to resolve "permission denied for table users" error
+  - Updated RLS policies to not reference auth.users table in USING clause
+  - Enhanced invitation handling in emailService.js with better error handling and logging
+  - Added script to fix permissions in existing databases
+
+- **Fixed User ID reference issues**: Updated InvitationContext to use correct Supabase user ID property
+  - Changed currentUser.uid references to currentUser.id to match Supabase conventions
+  - Added validation for user IDs before database operations
+  - Enhanced error logging for user ID related issues
+
+- **Settlement data now properly updates across all relevant screens when settlements are recorded**
+- **Balance information is kept in sync between the database and UI**
+- **Fixed settlement balances not reflecting in UI**: Modified `calculateGroupBalances` function to consider settlements when calculating balances
+- **Fixed home page balance calculation**: Enhanced Home page to calculate accurate user balances across all groups
+- **Standardized currency to INR**: Updated all currency displays to use the Indian Rupee (₹) symbol
+
+### Documentation
+- **Added comprehensive documentation for RLS issues**: Created detailed guidance on fixing permission problems
+- **Enhanced invitation system documentation**: Added details about email sending implementation and troubleshooting
+- **Updated memory.md with lessons learned**: Documented insights about email integration in React Native apps
+
+## [Previous Changes]
+
+### Removed
+- Reverted previously added EventEmitter-based refresh system
+- Removed duplicate dashboard tab
+
 ## [1.0.0] - Current Development
 
 ### Added
