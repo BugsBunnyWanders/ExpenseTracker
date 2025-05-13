@@ -11,6 +11,15 @@
   - Added a new `invitations.js` screen for managing pending invitations
   - Updated the app layout to include the invitation system
 
+- **Custom Split Functionality for Group Expenses**: Implemented a flexible system for customizing how expenses are split among group members.
+  - Enhanced the expense creation UI to allow selection between "Equal Split" and "Custom Split"
+  - Added dynamic form for specifying individual amounts for each group member
+  - Implemented real-time validation to ensure splits equal the total expense amount
+  - Added visual feedback showing split status (correct, incomplete, or excess)
+  - Enhanced the `initializeCustomSplits` function to properly handle both split types
+  - Improved input validation for numerical values in split amounts
+  - Leveraged existing database structure that supports custom splits
+
 - **Real-time Data Refresh System**: Implemented a global state management solution using React Context to automatically refresh UI when settlements are recorded.
   - Added `RefreshContext.js` to manage refresh state across the app
   - Updated `app/_layout.tsx` to provide the refresh context to all screens
@@ -242,3 +251,20 @@
 - Updated currency display from USD ($) to INR (₹) throughout the application
 - Enhanced expense list items with formatted date and currency
 - Improved expense input form with dedicated currency symbol display 
+
+## 2024-10-14: Fixed Node.js Dependency Issues
+
+### Fixed
+- Resolved error with `ws` module trying to import Node.js `stream` module
+- Created polyfills for Node.js modules needed in React Native environment
+
+### Added
+- Created custom `stream` module implementation for ws library
+- Added Metro bundler configuration with custom resolvers
+- Enhanced postinstall script to automatically apply polyfills
+
+### Technical Details
+- Modified `scripts/setup-polyfills.js` to patch ws module dependencies
+- Created `scripts/polyfills/ws-stream-polyfill.js` with minimal stream implementation
+- Added `metro.config.js` with custom resolver configuration
+- Created `scripts/create-ws-resolver.js` to set up ws-specific fixes 

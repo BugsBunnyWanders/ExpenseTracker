@@ -10,8 +10,16 @@ const fetchWithoutWebsocket = (...args) => {
   // Check if the URL includes 'realtime' which would indicate a WebSocket connection
   const url = args[0].url || args[0];
   if (typeof url === 'string' && url.includes('realtime')) {
+    console.warn('WebSocket connection attempt blocked: ', url);
     return Promise.reject(new Error('WebSocket connections are disabled'));
   }
+  
+  // Block any ws:// or wss:// URLs
+  if (typeof url === 'string' && (url.startsWith('ws:') || url.startsWith('wss:'))) {
+    console.warn('WebSocket URL blocked: ', url);
+    return Promise.reject(new Error('WebSocket URLs are disabled'));
+  }
+  
   return fetch(...args);
 };
 
@@ -30,6 +38,26 @@ const logSupabaseOperation = (operation, data, error) => {
   }
 };
 
+// Ensure WebSocket constructor is mocked if it exists
+if (typeof WebSocket !== 'undefined') {
+  const originalWebSocket = WebSocket;
+  global.WebSocket = function MockWebSocket(url) {
+    console.warn('WebSocket constructor intercepted and blocked', url);
+    return {
+      addEventListener: () => {},
+      removeEventListener: () => {},
+      send: () => {},
+      close: () => {}
+    };
+  };
+  // Preserve any properties from the original WebSocket
+  if (originalWebSocket) {
+    Object.keys(originalWebSocket).forEach(key => {
+      global.WebSocket[key] = originalWebSocket[key];
+    });
+  }
+}
+
 // Create Supabase client with custom fetch implementation to avoid WebSocket connections
 export const supabase = createClient(supabaseUrl, supabaseAnonKey, {
   auth: {
@@ -44,8 +72,33 @@ export const supabase = createClient(supabaseUrl, supabaseAnonKey, {
   // Explicitly disable realtime subscriptions
   realtime: {
     enabled: false,
+    autoConnect: false,
+    forceWebsocketsOnlyAddressScheme: false,
+  },
+  // Add Node.js compatibility mode for React Native
+  db: {
+    schema: 'public',
   },
 });
+
+// Monkey patch the Supabase client to block any attempt to use WebSockets
+if (supabase && supabase.realtime) {
+  // Override connect method to do nothing
+  supabase.realtime.connect = () => {
+    console.warn('Realtime connect attempt blocked');
+    return Promise.resolve();
+  };
+  
+  // Override subscribe method to return a dummy subscription
+  const originalSubscribe = supabase.realtime.channel;
+  supabase.realtime.channel = (topic, opts = {}) => {
+    console.warn('Realtime subscription attempt blocked for topic:', topic);
+    return {
+      on: () => ({ on: () => ({ subscribe: () => ({ unsubscribe: () => {} }) }) }),
+      subscribe: () => ({ unsubscribe: () => {} })
+    };
+  };
+}
 
 // Helper functions for authentication
 export const signUp = async (email, password, options = {}) => {

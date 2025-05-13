@@ -37,7 +37,9 @@
       ]
     ],
     "experiments": {
-      "typedRoutes": true
+      "typedRoutes": true,
+      "nodeModulesPath": "./node_modules",
+      "tsconfigPaths": true
     },
     "jsEngine": "hermes",
     "extra": {

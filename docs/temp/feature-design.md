@@ -290,3 +290,67 @@ We've implemented a global state management solution using React Context API to 
 - Consider using React Query or SWR for more advanced caching and stale data management
 - Implement optimistic UI updates for faster perceived performance
 - Add websocket support for real-time updates across multiple devices 
+
+# Feature Design: Custom Split for Group Expenses
+
+## Problem Statement
+When splitting expenses in a group, the default equal split doesn't always represent the actual distribution of costs. Users need a way to specify exactly how much each person owes for a particular expense instead of simply dividing the total equally.
+
+## Solution Design
+We've implemented a custom split feature that allows users to specify exactly how much each group member owes for a group expense, providing more flexibility and accuracy in expense tracking.
+
+### Key Components
+
+1. **Database Support**
+   - The existing expenses table already supports custom splits through:
+     - `split_type` field (can be 'equal' or 'custom')
+     - `splits` JSONB field storing custom split amounts per user
+
+2. **User Interface**
+   - Split Type Selector: Toggle between "Equal Split" and "Custom Split"
+   - Member Split Form: When "Custom Split" is selected, displays each group member with an input field
+   - Real-time Validation: Visual feedback showing if splits are correct, incomplete, or excessive
+
+3. **Balance Calculation**
+   - The system already handles both equal and custom splits when calculating balances
+   - For custom splits, each member owes exactly their specified amount
+
+### User Flow
+
+1. **Creating a Group Expense with Custom Split**
+   - User selects a group for the expense
+   - User enters expense details (title, amount, category)
+   - User selects "Custom Split" option
+   - User enters specific amount for each group member
+   - System validates that the sum of splits equals the total expense amount
+   - User creates the expense with custom splits
+
+2. **Validation and Feedback**
+   - Real-time sum calculation of all splits
+   - Visual indicators showing:
+     - "Splits are correct" (when sum equals total)
+     - "X amount left to assign" (when sum is less than total)
+     - "X excess assigned" (when sum exceeds total)
+
+### Technical Implementation
+
+1. **State Management**
+   - `splitType` state to track split type ('equal' or 'custom')
+   - `customSplits` object mapping member IDs to amount values
+   - Functions to initialize splits, handle changes, and validate totals
+
+2. **UI Components**
+   - Split type selection buttons
+   - Dynamic rendering of member input fields
+   - Status indication with appropriate styling
+
+3. **Input Validation**
+   - Numeric input handling with decimal support
+   - Precise calculation accounting for floating-point precision issues
+   - Prevention of invalid expense creation
+
+### Benefits
+- More accurate expense division based on actual consumption or responsibility
+- Flexibility for scenarios where equal splits don't make sense
+- Better representation of real-world financial arrangements within groups
+- Reduced need for adjustments and manual calculations outside the app 

@@ -358,3 +358,64 @@ The issue was related to Supabase's Row Level Security (RLS) policies. RLS was e
 2. Provide multiple ways to apply database changes (UI, API, scripts)
 3. Document all steps required for database changes
 4. Test scripts in the exact environment they'll be used in 
+
+## NodeJS Modules in React Native (2024-10-14)
+
+### Issue
+When using packages that depend on Node.js built-in modules like 'stream', 'crypto', etc., React Native will show errors because it doesn't include the Node standard library.
+
+Error example:
+```
+The package at "node_modules\ws\lib\sender.js" attempted to import the Node standard library module "stream".
+It failed because the native React runtime does not include the Node standard library.
+```
+
+### Solution
+1. Create empty shims for Node.js built-in modules
+2. For specific problematic packages like 'ws', create targeted fixes:
+   - Patch the specific files that try to import Node.js modules
+   - Create custom minimal implementations of the required functionality
+   - Use Metro bundler's resolver to redirect imports to our shims
+
+### Implementation
+- Created/updated `scripts/setup-polyfills.js` to shim Node.js modules
+- Created a custom polyfill for the 'stream' module used by 'ws'
+- Added Metro configuration to handle resolver settings
+- Updated the postinstall script to apply these fixes automatically
+
+### Enhanced Mobile-Specific Fixes (2024-10-14)
+After discovering that mobile devices still showed the error despite our fixes, we implemented these additional solutions:
+
+1. **More aggressive patching strategy**:
+   - Patch all .js files in the 'ws/lib' directory, not just sender.js
+   - Create empty polyfills for each Node.js module individually in scripts/polyfills/
+   - Add comprehensive WebSocket mocking to prevent any WebSocket connection attempts
+   
+2. **Enhanced Supabase client configuration**:
+   - Add complete WebSocket interception at the global level
+   - Monkey patch the Supabase realtime client methods to prevent WebSocket connections
+   - Add more aggressive URL blocking in the custom fetch implementation
+   
+3. **Metro bundler improvements**:
+   - Add more specific module resolution rules for each Node.js module
+   - Add blockList configuration to prevent loading problematic modules
+   - Add web-specific aliases for browser-compatible polyfills
+   
+4. **Expo configuration**:
+   - Add `nodeModulesPath` experiment in app.json to help with module resolution
+   - Create clean-reinstall and start-clean scripts for easier troubleshooting
+   - Provide detailed documentation for fixing the issue on mobile devices
+
+### Learning
+1. **Mobile vs Desktop differences**: Issues that are fixed on desktop development may still appear on mobile devices due to differences in bundling, caching, and execution environment.
+
+2. **Multiple layers of defense**: For stubborn Node.js compatibility issues, implement multiple layers of fixes:
+   - At the file level (patching problematic files)
+   - At the module level (creating polyfills)
+   - At the bundler level (Metro configuration)
+   - At the app level (disabling problematic features)
+   - At the global level (mocking built-in constructors like WebSocket)
+
+3. **Caching issues**: Mobile devices may cache problematic modules, requiring clearing caches on both the development machine and the mobile device.
+
+4. **Documentation importance**: Create detailed troubleshooting guides that include both automated scripts and manual steps to fix issues for all users. 

@@ -192,23 +192,46 @@ export const removeFriend = async (userId, friendId) => {
 export const getUsersByIds = async (userIds) => {
   try {
     if (!userIds || userIds.length === 0) {
+      console.log('No user IDs provided to getUsersByIds');
       return {};
     }
     
-    console.log('Fetching users with IDs:', userIds);
+    console.log('Fetching users with IDs:', JSON.stringify(userIds));
+    
+    // Validate all userIds are strings - important for proper query
+    const validUserIds = userIds.filter(id => typeof id === 'string' && id.trim() !== '');
+    
+    if (validUserIds.length === 0) {
+      console.warn('No valid user IDs found in:', userIds);
+      return {};
+    }
     
     const { data, error } = await supabase
       .from('profiles')
       .select('*')
-      .in('id', userIds);
+      .in('id', validUserIds);
     
-    if (error) throw error;
+    if (error) {
+      console.error('Error in getUsersByIds:', error);
+      throw error;
+    }
+    
+    // Log the full response to debug
+    console.log(`Retrieved ${data?.length || 0} users:`, JSON.stringify(data));
     
     // Convert the array of users to an object with ID as key for easier lookup
     const userMap = {};
     (data || []).forEach(user => {
-      userMap[user.id] = user;
+      if (user && user.id) {
+        userMap[user.id] = user;
+      }
     });
+    
+    // Check if all requested IDs were found
+    const missingIds = validUserIds.filter(id => !userMap[id]);
+    if (missingIds.length > 0) {
+      console.warn('Some user IDs were not found:', missingIds);
+    }
     
     return userMap;
   } catch (error) {

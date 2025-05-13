@@ -32,6 +32,11 @@ The ExpenseTracker is a React Native mobile application built with Expo and Supa
 - Real-time UI updates after settlement completion using RefreshContext
 - Group invitation system with email notifications
 - Multi-tier email sending system with fallback options
+- Custom split functionality for group expenses:
+  - UI for specifying custom split amounts for each member
+  - Real-time validation of split amounts
+  - Visual indicators for split status (correct, incomplete, excess)
+  - Balance calculations supporting both equal and custom splits
 
 ### In Progress Features
 
@@ -83,6 +88,16 @@ The database includes the following tables:
 - `group_invitations`: Invitations to join groups for non-registered users
 
 Each table has appropriate RLS policies to ensure proper access control.
+
+## Technical Issues Fixed
+
+- Database RLS policies for accessing profiles and expenses
+- Email confirmation flow for new user registration
+- Group invitation and member management
+- Node.js module compatibility issues in React Native environment
+  - Fixed ws module dependency on Node.js stream module
+  - Created polyfills for required Node.js built-in modules
+  - Configured Metro bundler with custom resolvers
 
 ## Next Steps
 
