@@ -5,8 +5,6 @@
 // like react-native-config or expo-constants
 
 // Email configuration
-export const GOOGLE_EMAIL = "saswatray2505@gmail.com";
-export const GOOGLE_APP_PASSWORD = "mnyt kmso ojay hnwa";
 
 // EmailJS configuration (alternative email service)
 export const EMAILJS_SERVICE_ID = process.env.EXPO_PUBLIC_EMAILJS_SERVICE_ID || "";
